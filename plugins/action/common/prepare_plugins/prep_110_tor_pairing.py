@@ -177,6 +177,8 @@ class PreparePlugin:
 
             parent_leaf2 = peer.get('parent_leaf2')
             tor2 = peer.get('tor2')
+            leaf_po_id_value = peer.get('leaf_po_id')
+            tor_po_id_value = peer.get('tor_po_id')
 
             # Handle both dict and string formats for optional switches
             leaf2_name = parent_leaf2.get('name') if isinstance(parent_leaf2, dict) else parent_leaf2 if parent_leaf2 else None
@@ -248,13 +250,21 @@ class PreparePlugin:
             tor1_po = None
             tor2_po = None
             
-            if leaf_is_vpc:
+            if leaf_po_id_value is not None:
+                leaf1_po = self._normalize_vpc_id(leaf_po_id_value, "leaf_po_id", errors)
+                if leaf_is_vpc:
+                    leaf2_po = leaf1_po
+            elif leaf_is_vpc:
                 leaf1_po = self._normalize_vpc_id(leaf_vpc_domain, "leaf_vpc_id", errors)
-                leaf2_po = leaf1_po  # Same VPC domain for both leafs
-            
-            if tor_is_vpc:
+                leaf2_po = leaf1_po
+
+            if tor_po_id_value is not None:
+                tor1_po = self._normalize_vpc_id(tor_po_id_value, "tor_po_id", errors)
+                if tor_is_vpc:
+                    tor2_po = tor1_po
+            elif tor_is_vpc:
                 tor1_po = self._normalize_vpc_id(tor_vpc_domain, "tor_vpc_id", errors)
-                tor2_po = tor1_po  # Same VPC domain for both tors
+                tor2_po = tor1_po
 
             leaf2_serial = ''
             if leaf_is_vpc and leaf2_switch:
@@ -275,26 +285,41 @@ class PreparePlugin:
                 # scenario with additional members but no vpc support already logged
                 continue
 
-            # po_map = {}
-            # if leaf1_serial and leaf1_po is not None:
-            #     po_map[f"{leaf1_serial}_PO"] = str(leaf1_po)
-            # if leaf2_serial and leaf2_po is not None:
-            #     po_map[f"{leaf2_serial}_PO"] = str(leaf2_po)
-            # if tor1_serial and tor1_po is not None:
-            #     po_map[f"{tor1_serial}_PO"] = str(tor1_po)
-            # if tor2_serial and tor2_po is not None:
-            #     po_map[f"{tor2_serial}_PO"] = str(tor2_po)
-            # if leaf_is_vpc and leaf1_serial and leaf2_serial and leaf_vpc_domain:
-            #     po_map[f"{leaf1_serial}~{leaf2_serial}_VPC"] = str(leaf_vpc_domain)
-            # if tor_is_vpc and tor1_serial and tor2_serial and tor_vpc_domain:
-            #     po_map[f"{tor1_serial}~{tor2_serial}_VPC"] = str(tor_vpc_domain)
+            # Build po_map only for scenarios that require it (vpc-to-vpc and vpc-to-standalone)
+            po_map = {}
+            if scenario in ['vpc_to_vpc', 'vpc_to_standalone']:
+                if leaf1_po is None:
+                    errors.append(
+                        f"ToR pairing '{pairing_id}' requires 'leaf_po_id' or resolvable vPC domain ID for the parent leafs."
+                    )
+                if scenario == 'vpc_to_vpc' and tor1_po is None:
+                    errors.append(
+                        f"ToR pairing '{pairing_id}' requires 'tor_po_id' or resolvable vPC domain ID for the ToRs."
+                    )
+                if scenario == 'vpc_to_standalone' and tor1_po is None:
+                    errors.append(
+                        f"ToR pairing '{pairing_id}' requires the 'tor_po_id' field for the standalone ToR port-channel ID."
+                    )
 
-            # # For standalone-to-standalone scenario, po_map can be empty (no VPC/port-channel needed)
-            # if not po_map and scenario != 'standalone_to_standalone':
-            #     errors.append(
-            #         f"No port-channel mapping could be derived for ToR pairing '{pairing_id}'."
-            #     )
-            #     continue
+                if leaf1_serial and leaf1_po is not None:
+                    po_map[f"{leaf1_serial}_PO"] = str(leaf1_po)
+                if leaf2_serial and leaf2_po is not None:
+                    po_map[f"{leaf2_serial}_PO"] = str(leaf2_po)
+                if tor1_serial and tor1_po is not None:
+                    po_map[f"{tor1_serial}_PO"] = str(tor1_po)
+                if tor2_serial and tor2_po is not None:
+                    po_map[f"{tor2_serial}_PO"] = str(tor2_po)
+                if leaf_is_vpc and leaf1_serial and leaf2_serial and leaf_vpc_domain:
+                    po_map[f"{leaf1_serial}~{leaf2_serial}_VPC"] = str(leaf1_po)
+                if tor_is_vpc and tor1_serial and tor2_serial and tor_vpc_domain:
+                    po_map[f"{tor1_serial}~{tor2_serial}_VPC"] = str(tor1_po)
+
+                # For VPC scenarios, po_map must not be empty
+                if not po_map:
+                    errors.append(
+                        f"No port-channel mapping could be derived for ToR pairing '{pairing_id}' (scenario: {scenario})."
+                    )
+                    continue
 
             if len(errors) > error_count_start:
                 continue
@@ -307,8 +332,8 @@ class PreparePlugin:
                     'leafSN2': leaf2_serial or '',
                     'torSN1': tor1_serial or '',
                     'torSN2': tor2_serial or ''
-                }
-                # 'po_map': po_map
+                },
+                'po_map': po_map
             })
 
         if errors:
