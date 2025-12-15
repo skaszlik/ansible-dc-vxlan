@@ -21,37 +21,21 @@
 
 ---
 
-- name: Import iBGP VXLAN Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_vxlan.yml
-  when:
-    - data_model_extended.vxlan.fabric.type == 'VXLAN_EVPN'
-    - change_flags.changes_detected_any
+# Task Router - Dynamically determines which sub_main file to execute
+# based on fabric_type and change_flags
+- name: Route tasks for fabric type {{ data_model_extended.vxlan.fabric.type }}
+  cisco.nac_dc_vxlan.dtc.task_router:
+    fabric_type: "{{ data_model_extended.vxlan.fabric.type }}"
+    change_flags: "{{ change_flags }}"
+    role: "create"
+  register: task_router_result
 
-- name: Import eBGP VXLAN Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_ebgp_vxlan.yml
-  when:
-    - data_model_extended.vxlan.fabric.type == 'eBGP_VXLAN'
-    - change_flags.changes_detected_any
-
-- name: Import ISN Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_isn.yml
-  when:
-    - data_model_extended.vxlan.fabric.type == 'ISN'
-    - change_flags.changes_detected_any
-
-- name: Import MSD Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_msd.yml
-  when: data_model_extended.vxlan.fabric.type == 'MSD'
-
-- name: Import MCFG Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_mcfg.yml
-  when: data_model_extended.vxlan.fabric.type == 'MCFG'
-
-- name: Import External Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_external.yml
-  when:
-    - data_model_extended.vxlan.fabric.type == 'External'
-    - change_flags.changes_detected_any
+- name: Execute routed tasks for {{ data_model_extended.vxlan.fabric.type }}
+  ansible.builtin.include_tasks: "{{ task_file }}"
+  loop: "{{ task_router_result.task_files }}"
+  loop_control:
+    loop_var: task_file
+  when: task_router_result.task_files | length > 0
 
 - name: Mark Stage Role Create Completed
   cisco.nac_dc_vxlan.common.run_map:

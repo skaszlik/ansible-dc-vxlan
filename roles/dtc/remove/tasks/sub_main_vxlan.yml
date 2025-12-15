@@ -41,55 +41,55 @@
   tags: "{{ nac_tags.remove }}"
 
 - name: Remove iBGP VXLAN Fabric Edge Connections from Nexus Dashboard
-  ansible.builtin.import_tasks: common/edge_connections.yml
+  ansible.builtin.include_tasks: common/edge_connections.yml
   tags: "{{ nac_tags.remove_edge_connections }}"
   when:
     - change_flags.changes_detected_edge_connections
 
 - name: Remove iBGP VXLAN Fabric Policy from Nexus Dashboard
-  ansible.builtin.import_tasks: common/policy.yml
+  ansible.builtin.include_tasks: common/policy.yml
   tags: "{{ nac_tags.remove_policy }}"
   when:
     - change_flags.changes_detected_policy
 
 - name: Remove iBGP VXLAN Fabric Interfaces from Nexus Dashboard
-  ansible.builtin.import_tasks: common/interfaces.yml
+  ansible.builtin.include_tasks: common/interfaces.yml
   tags: "{{ nac_tags.remove_interfaces }}"
   when:
     - change_flags.changes_detected_interfaces
 
 - name: Remove iBGP VXLAN Fabric Networks from Nexus Dashboard
-  ansible.builtin.import_tasks: common_vxlan/networks.yml
+  ansible.builtin.include_tasks: common_vxlan/networks.yml
   tags: "{{ nac_tags.remove_networks }}"
   when:
     - change_flags.changes_detected_networks
 
 - name: Remove iBGP VXLAN Fabric VRFs from Nexus Dashboard
-  ansible.builtin.import_tasks: common_vxlan/vrfs.yml
+  ansible.builtin.include_tasks: common_vxlan/vrfs.yml
   tags: "{{ nac_tags.remove_vrfs }}"
   when:
     - change_flags.changes_detected_vrfs
 
 - name: Remove iBGP VXLAN Fabric Links from Nexus Dashboard
-  ansible.builtin.import_tasks: common/links.yml
+  ansible.builtin.include_tasks: common/links.yml
   tags: "{{ nac_tags.remove_links }}"
   when:
     - change_flags.changes_detected_fabric_links
 
 - name: Remove iBGP VXLAN Fabric vPC Peering from Nexus Dashboard
-  ansible.builtin.import_tasks: common/vpc_peers.yml
+  ansible.builtin.include_tasks: common/vpc_peers.yml
   tags: "{{ nac_tags.remove_vpc_peers }}"
   when:
     - change_flags.changes_detected_vpc_peering
 
 - name: Remove iBGP VXLAN Fabric ToR Pairing from Nexus Dashboard
-  ansible.builtin.import_tasks: common/tor_pairing.yml
+  ansible.builtin.include_tasks: common/tor_pairing.yml
   tags: "{{ nac_tags.remove_tor_pairing }}"
   when:
     - vars_common_vxlan.changes_detected_tor_pairing
 
 - name: Remove iBGP VXLAN Fabric Switches from Nexus Dashboard
-  ansible.builtin.import_tasks: common/switches.yml
+  ansible.builtin.include_tasks: common/switches.yml
   tags: "{{ nac_tags.remove_switches }}"
   when:
     - change_flags.changes_detected_inventory
