@@ -318,6 +318,12 @@ class ActionModule(ActionBase):
         # Initialize Templar for template rendering
         templar = Templar(loader=self._loader, variables=task_vars)
 
+        # Add template_path to the Jinja2 environment search path to support imports
+        if hasattr(templar, 'environment') and hasattr(templar.environment, 'loader'):
+            if hasattr(templar.environment.loader, 'searchpath'):
+                if template_path not in templar.environment.loader.searchpath:
+                    templar.environment.loader.searchpath.append(template_path)
+
         # Ensure output directory exists
         os.makedirs(path_name, exist_ok=True)
 
