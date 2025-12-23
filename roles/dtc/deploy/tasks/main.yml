@@ -21,48 +21,24 @@
 
 ---
 
-- name: Import iBGP VXLAN EVPN Role Tasks
-  ansible.builtin.import_tasks: sub_main_vxlan.yml
-  tags: "{{ nac_tags.deploy }}" # Tags defined in roles/common_global/vars/main.yml
-  when:
-    - data_model_extended.vxlan.fabric.type == 'VXLAN_EVPN'
-    - change_flags.changes_detected_any
-
-- name: Import eBGP Role Tasks
-  ansible.builtin.import_tasks: sub_main_ebgp_vxlan.yml
+# Task Router - Dynamically determines which sub_main file to execute
+# based on fabric_type and change_flags
+- name: Route tasks for fabric type {{ data_model_extended.vxlan.fabric.type }}
+  cisco.nac_dc_vxlan.dtc.task_router:
+    fabric_type: "{{ data_model_extended.vxlan.fabric.type }}"
+    change_flags: "{{ change_flags }}"
+    role: "deploy"
+    child_fabrics_vrfs_networks_changed: "{{ child_fabrics_vrfs_networks_changed | default([]) }}"
+  register: task_router_result
   tags: "{{ nac_tags.deploy }}"
-  when:
-    - data_model_extended.vxlan.fabric.type == 'eBGP_VXLAN'
-    - change_flags.changes_detected_any
 
-- name: Import MSD Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_msd.yml
+- name: Execute routed tasks for {{ data_model_extended.vxlan.fabric.type }}
+  ansible.builtin.include_tasks: "{{ task_file }}"
+  loop: "{{ task_router_result.task_files }}"
+  loop_control:
+    loop_var: task_file
+  when: task_router_result.task_files | length > 0
   tags: "{{ nac_tags.deploy }}"
-  when: >
-    (data_model_extended.vxlan.fabric.type == 'MSD') and
-    (change_flags.changes_detected_any or
-    (child_fabrics_vrfs_networks_changed is defined and child_fabrics_vrfs_networks_changed | length > 0))
-
-- name: Import MCFG Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_mcfg.yml
-  tags: "{{ nac_tags.deploy }}" # Tags defined in roles/common_global/vars/main.yml
-  when: >
-    (data_model_extended.vxlan.fabric.type == 'MCFG') and
-    (change_flags.changes_detected_any)
-
-- name: Import ISN Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_isn.yml
-  tags: "{{ nac_tags.deploy }}"
-  when:
-    - data_model_extended.vxlan.fabric.type == 'ISN'
-    - change_flags.changes_detected_any
-
-- name: Import External Fabric Role Tasks
-  ansible.builtin.import_tasks: sub_main_external.yml
-  tags: "{{ nac_tags.deploy }}"
-  when:
-    - data_model_extended.vxlan.fabric.type == 'External'
-    - change_flags.changes_detected_any
 
 - name: Mark Stage Role Deploy Completed
   cisco.nac_dc_vxlan.common.run_map:

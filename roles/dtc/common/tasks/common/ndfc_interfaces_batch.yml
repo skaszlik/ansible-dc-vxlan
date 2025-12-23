@@ -1,0 +1,138 @@
+# Copyright (c) 2025 Cisco Systems, Inc. and its affiliates
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+# the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+# SPDX-License-Identifier: MIT
+
+# This task file processes all interface types in parallel using the batch_file_processor plugin.
+# It replaces 12 individual ndfc_interface_*.yml task files, reducing ~84 sequential tasks to 1 parallel batch.
+
+---
+
+- name: Build All Interface Files in Parallel
+  cisco.nac_dc_vxlan.common.batch_file_processor:
+    path_name: "{{ path_name }}"
+    template_path: "{{ role_path }}/templates"
+    fabric_type: "{{ data_model_extended.vxlan.fabric.type }}"
+    fabric_name: "{{ data_model_extended.vxlan.fabric.name }}"
+    role_path: "{{ common_role_path }}"
+    check_roles: "{{ check_roles }}"
+    max_workers: 8
+    files:
+      # Breakout interfaces
+      - file_name: ndfc_interface_breakout.yml
+        template: ndfc_interfaces/ndfc_interface_breakout.j2
+        result_var: interface_breakout
+        change_flag: changes_detected_interface_breakout
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.breakout.count > 0"
+
+      # Breakout pre-provisioned interfaces
+      - file_name: ndfc_interface_breakout_preprov.yml
+        template: ndfc_interfaces/ndfc_interface_breakout_preprov.j2
+        result_var: interface_breakout_preprov
+        change_flag: changes_detected_interface_breakout_preprov
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.breakout_preprov.count > 0"
+
+      # Loopback interfaces
+      - file_name: ndfc_interface_loopback.yml
+        template: ndfc_interfaces/ndfc_loopback_interfaces.j2
+        result_var: int_loopback_config
+        change_flag: changes_detected_interface_loopback
+        condition: "(data_model_extended.vxlan.topology.interfaces.modes.loopback.count > 0) or (data_model_extended.vxlan.topology.interfaces.modes.fabric_loopback.count > 0) or (data_model_extended.vxlan.topology.interfaces.modes.mpls_loopback.count > 0)"
+
+      # Access port-channel interfaces
+      - file_name: ndfc_interface_access_po.yml
+        template: ndfc_interfaces/ndfc_interface_access_po.j2
+        result_var: interface_access_po
+        change_flag: changes_detected_interface_access_po
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.access_po.count > 0"
+
+      # Trunk port-channel interfaces
+      - file_name: ndfc_interface_trunk_po.yml
+        template: ndfc_interfaces/ndfc_interface_trunk_po.j2
+        result_var: interface_trunk_po
+        change_flag: changes_detected_interface_trunk_po
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.trunk_po.count > 0"
+
+      # Routed interfaces
+      - file_name: ndfc_interface_routed.yml
+        template: ndfc_interfaces/ndfc_interface_routed.j2
+        result_var: interface_routed
+        change_flag: changes_detected_interface_routed
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.routed.count > 0"
+
+      # Routed sub-interfaces
+      - file_name: ndfc_sub_interface_routed.yml
+        template: ndfc_interfaces/ndfc_sub_interface_routed.j2
+        result_var: sub_interface_routed
+        change_flag: changes_detected_sub_interface_routed
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.routed_sub.count > 0"
+
+      # Routed port-channel interfaces
+      - file_name: ndfc_interface_po_routed.yml
+        template: ndfc_interfaces/ndfc_interface_po_routed.j2
+        result_var: interface_po_routed
+        change_flag: changes_detected_interface_po_routed
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.routed_po.count > 0"
+
+      # Trunk interfaces
+      - file_name: ndfc_interface_trunk.yml
+        template: ndfc_interfaces/ndfc_interface_trunk.j2
+        result_var: interface_trunk
+        change_flag: changes_detected_interface_trunk
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.trunk.count > 0"
+
+      # Access interfaces
+      - file_name: ndfc_interface_access.yml
+        template: ndfc_interfaces/ndfc_interface_access.j2
+        result_var: interface_access
+        change_flag: changes_detected_interface_access
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.access.count > 0"
+
+      # Dot1q interfaces
+      - file_name: ndfc_interface_dot1q.yml
+        template: ndfc_interfaces/ndfc_interface_dot1q.j2
+        result_var: interface_dot1q
+        change_flag: changes_detected_interface_dot1q
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.dot1q.count > 0"
+
+      # vPC interfaces
+      - file_name: ndfc_interface_vpc.yml
+        template: ndfc_interfaces/ndfc_interface_vpc.j2
+        result_var: interface_vpc
+        change_flag: changes_detected_interface_vpc
+        condition: "data_model_extended.vxlan.topology.interfaces.modes.access_vpc.count > 0 or data_model_extended.vxlan.topology.interfaces.modes.trunk_vpc.count > 0"
+  register: interface_batch_result
+  delegate_to: localhost
+
+# Extract individual results from batch for compatibility with downstream tasks
+- name: Set Interface Variables from Batch Result
+  ansible.builtin.set_fact:
+    interface_breakout: "{{ interface_batch_result.results.interface_breakout | default([]) }}"
+    interface_breakout_preprov: "{{ interface_batch_result.results.interface_breakout_preprov | default([]) }}"
+    int_loopback_config: "{{ interface_batch_result.results.int_loopback_config | default([]) }}"
+    interface_access_po: "{{ interface_batch_result.results.interface_access_po | default([]) }}"
+    interface_trunk_po: "{{ interface_batch_result.results.interface_trunk_po | default([]) }}"
+    interface_routed: "{{ interface_batch_result.results.interface_routed | default([]) }}"
+    sub_interface_routed: "{{ interface_batch_result.results.sub_interface_routed | default([]) }}"
+    interface_po_routed: "{{ interface_batch_result.results.interface_po_routed | default([]) }}"
+    interface_trunk: "{{ interface_batch_result.results.interface_trunk | default([]) }}"
+    interface_access: "{{ interface_batch_result.results.interface_access | default([]) }}"
+    interface_dot1q: "{{ interface_batch_result.results.interface_dot1q | default([]) }}"
+    interface_vpc: "{{ interface_batch_result.results.interface_vpc | default([]) }}"
+  delegate_to: localhost

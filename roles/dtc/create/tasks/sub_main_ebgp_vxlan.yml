@@ -35,7 +35,7 @@
   tags: "{{ nac_tags.create }}"
 
 - name: Create eBGP VXLAN Fabric in Nexus Dashboard
-  ansible.builtin.import_tasks: ebgp_vxlan/fabric.yml
+  ansible.builtin.include_tasks: ebgp_vxlan/fabric.yml
   when:
     - data_model_extended.vxlan.fabric.name is defined
     - data_model_extended.vxlan.fabric.type == "eBGP_VXLAN"
@@ -44,14 +44,14 @@
   tags: "{{ nac_tags.create_fabric }}"
 
 - name: Manage eBGP VXLAN Fabric Switches in Nexus Dashboard
-  ansible.builtin.import_tasks: common/devices.yml
+  ansible.builtin.include_tasks: common/devices.yml
   when:
     - data_model_extended.vxlan.topology.switches | length > 0
     - change_flags.changes_detected_inventory
   tags: "{{ nac_tags.create_switches }}"
 
 - name: Manage eBGP VXLAN vPC Peering in Nexus Dashboard
-  ansible.builtin.import_tasks: common/vpc_peering.yml
+  ansible.builtin.include_tasks: common/vpc_peering.yml
   when:
     - data_model_extended.vxlan.topology.vpc_peers | length > 0
     - change_flags.changes_detected_vpc_peering
@@ -77,7 +77,7 @@
         - change_flags.changes_detected_vpc_peering or change_flags.changes_detected_vpc_domain_id_resource
 
 - name: Manage eBGP VXLAN Fabric ToR Pairing in Nexus Dashboard
-  ansible.builtin.import_tasks: common/tor_pairing.yml
+  ansible.builtin.include_tasks: common/tor_pairing.yml
   when:
     - vars_common_ebgp_vxlan is defined
     - vars_common_ebgp_vxlan.tor_pairing is defined
@@ -86,14 +86,14 @@
   tags: "{{ nac_tags.create_tor_pairing }}"
 
 - name: Manage eBGP VXLAN Fabric Interfaces in Nexus Dashboard
-  ansible.builtin.import_tasks: common/interfaces.yml
+  ansible.builtin.include_tasks: common/interfaces.yml
   when:
     - (data_model_extended.vxlan.topology.interfaces.modes.all.count >0) and (data_model_extended.vxlan.topology.switches | length > 0)
     - change_flags.changes_detected_interfaces
   tags: "{{ nac_tags.create_interfaces }}"
 
 - name: Manage eBGP VXLAN Fabric VRFs and Networks in Nexus Dashboard
-  ansible.builtin.import_tasks: common_vxlan/vrfs_networks.yml
+  ansible.builtin.include_tasks: common_vxlan/vrfs_networks.yml
   when:
     - data_model_extended.vxlan.overlay is defined
     - data_model_extended.vxlan.topology.switches | length > 0
@@ -101,7 +101,7 @@
   tags: "{{ nac_tags.create_vrfs_networks }}"
 
 - name: Manage eBGP VXLAN Fabric Policies in Nexus Dashboard
-  ansible.builtin.import_tasks: common/policies.yml
+  ansible.builtin.include_tasks: common/policies.yml
   when:
     - (data_model_extended.vxlan.policy is defined) and (data_model_extended.vxlan.policy.policies | length > 0)
     - change_flags.changes_detected_policy

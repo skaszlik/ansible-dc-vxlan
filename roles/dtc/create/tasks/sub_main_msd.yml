@@ -35,7 +35,7 @@
   tags: "{{ nac_tags.create }}"
 
 - name: Create MSD Fabric in Nexus Dashboard
-  ansible.builtin.import_tasks: common/fabric.yml
+  ansible.builtin.include_tasks: common/fabric.yml
   when:
     - data_model_extended.vxlan.fabric.name is defined
     - data_model_extended.vxlan.fabric.type == "MSD"
@@ -43,7 +43,7 @@
   tags: "{{ nac_tags.create_fabric }}"
 
 - name: Manage MSD Fabric Child Fabrics in Nexus Dashboard
-  ansible.builtin.import_tasks: msd/child_fabrics.yml
+  ansible.builtin.include_tasks: msd/child_fabrics.yml
   when:
     - data_model_extended.vxlan.multisite.child_fabrics is defined and data_model_extended.vxlan.multisite.child_fabrics | length > 0
 
@@ -72,7 +72,7 @@
     - change_flags.changes_detected_bgw_anycast_vip
 
 - name: Manage MSD Fabric VRFs and Networks in Nexus Dashboard
-  ansible.builtin.import_tasks: msd/vrfs_networks.yml
+  ansible.builtin.include_tasks: msd/vrfs_networks.yml
   when:
     - data_model_extended.vxlan.multisite.overlay is defined
     - data_model_extended.vxlan.multisite.overlay

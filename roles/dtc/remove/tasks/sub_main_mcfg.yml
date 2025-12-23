@@ -34,5 +34,5 @@
   tags: "{{ nac_tags.remove }}"
 
 - name: Remove MCFG Fabric Child Fabrics from Nexus Dashboard
-  ansible.builtin.import_tasks: mcfg/child_fabrics.yml
+  ansible.builtin.include_tasks: mcfg/child_fabrics.yml
   tags: "{{ nac_tags.remove }}"

@@ -73,15 +73,18 @@ class FabricDeployManager:
 
         self.fabric_in_sync = True
         response = self._send_request("GET", self.api_paths["get_switches_by_fabric"])
-        for attempt in range(5):
+        max_attempts = 5
+        for attempt in range(max_attempts):
             self._fabric_check_sync_helper(response)
             if self.fabric_in_sync:
                 break
-            if (attempt + 1) == 5 and not self.fabric_in_sync:
+            if (attempt + 1) == max_attempts and not self.fabric_in_sync:
                 break
             else:
-                display.warning(f"Fabric {self.fabric_name} is out of sync. Attempt {attempt + 1}/5. Sleeping 2 seconds before retry.")
-                sleep(2)
+                # Exponential backoff: 0.5, 1, 2, 4, 5 seconds (max 5s)
+                sleep_time = min(0.5 * (2 ** attempt), 5)
+                display.warning(f"Fabric {self.fabric_name} is out of sync. Attempt {attempt + 1}/{max_attempts}. Sleeping {sleep_time:.1f} seconds before retry.")
+                sleep(sleep_time)
                 self.fabric_in_sync = True
                 response = self._send_request("GET", self.api_paths["get_switches_by_fabric"])
 
