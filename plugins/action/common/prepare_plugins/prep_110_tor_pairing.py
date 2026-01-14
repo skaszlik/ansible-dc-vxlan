@@ -129,6 +129,8 @@ class PreparePlugin:
 
             parent_leaf2 = peer.get('parent_leaf2')
             tor2 = peer.get('tor2')
+            leaf_po_id_value = peer.get('leaf_po_id')
+            tor_po_id_value = peer.get('tor_po_id')
 
             # Handle both dict and string formats for optional switches
             leaf2_name = parent_leaf2.get('name') if isinstance(parent_leaf2, dict) else parent_leaf2 if parent_leaf2 else None
@@ -215,8 +217,8 @@ class PreparePlugin:
                     'leafSN2': leaf2_serial or '',
                     'torSN1': tor1_serial or '',
                     'torSN2': tor2_serial or ''
-                }
-                # 'po_map': po_map
+                },
+                'po_map': po_map
             })
 
         if errors:

@@ -1,4 +1,229 @@
 ---
+- name: Ensure ToR pairing artifact path is defined
+  ansible.builtin.set_fact:
+    path_name: "{{ role_path }}/files/vxlan/{{ MD_Extended.vxlan.fabric.name }}/"
+  delegate_to: localhost
+  when: path_name is not defined
+
+- name: Initialize ToR pairing state defaults for remove role
+  ansible.builtin.set_fact:
+    tor_pairing_previous: "{{ tor_pairing_previous | default({'stat': {'exists': false}}) }}"
+    tor_pairing_previous_list: "{{ tor_pairing_previous_list | default([]) }}"
+    tor_pairing_current_list: "{{ tor_pairing_current_list | default(vars_common_vxlan.tor_pairing | default([])) }}"
+    tor_pairing_removed: "{{ tor_pairing_removed | default(vars_common_vxlan.tor_pairing_removed | default([])) }}"
+  delegate_to: localhost
+  when: tor_pairing_delete_mode is defined and tor_pairing_delete_mode | bool
+
+- name: Track previous ToR pairing artifact existence
+  ansible.builtin.set_fact:
+    tor_pairing_previous_exists: "{{ (tor_pairing_previous | default({})).get('stat', {}).get('exists', false) }}"
+  delegate_to: localhost
+  when: tor_pairing_delete_mode is defined and tor_pairing_delete_mode | bool
+
+- name: Get list of leaf switches for ToR pairing discovery (brownfield remove)
+  ansible.builtin.set_fact:
+    leaf_switches_for_query: >-
+      {{ MD_Extended.vxlan.topology.switches
+         | selectattr('role', 'equalto', 'leaf')
+         | list }}
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+
+- name: Query NDFC from first leaf switch for ToR pairing discovery (brownfield remove)
+  cisco.dcnm.dcnm_rest:
+    method: GET
+    path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/tor/fabrics/{{ MD_Extended.vxlan.fabric.name }}/switches/{{ leaf_switches_for_query[0].serial_number }}"
+  register: ndfc_tor_discovery
+  failed_when: false
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - leaf_switches_for_query is defined
+    - leaf_switches_for_query | length > 0
+
+- name: Verify NDFC ToR discovery query succeeded (brownfield remove)
+  ansible.builtin.assert:
+    that:
+      - ndfc_tor_discovery is defined
+      - not (ndfc_tor_discovery.failed | default(false))
+    fail_msg: "Failed to query ToR pairings from NDFC. Cannot proceed with brownfield removal detection."
+    success_msg: "Successfully queried NDFC for existing ToR pairings"
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - leaf_switches_for_query is defined
+    - leaf_switches_for_query | length > 0
+
+- name: Initialize NDFC discovered pairings list (brownfield remove)
+  ansible.builtin.set_fact:
+    ndfc_discovered_pairings: []
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+
+- name: Extract existing ToR pairings from NDFC response (brownfield remove)
+  ansible.builtin.set_fact:
+    ndfc_discovered_pairings: >-
+      {{ ndfc_discovered_pairings + [
+        {
+          'pairing_id': (tor_pair.torName | replace('~', '-')),
+          'scenario': (
+            'vpc_to_vpc' if (tor_pair.torPeerSN is not none and ',' in (tor_pair.leafSNs | default('')))
+            else 'vpc_to_standalone' if (',' in (tor_pair.leafSNs | default('')) and tor_pair.torPeerSN is none)
+            else 'standalone_to_standalone'
+          ),
+          'payload': {
+            'leafSN1': (tor_pair.leafSNs.split(',')[0] if tor_pair.leafSNs and ',' in tor_pair.leafSNs else tor_pair.leafSNs | default('')),
+            'leafSN2': (tor_pair.leafSNs.split(',')[1] if tor_pair.leafSNs and ',' in tor_pair.leafSNs and tor_pair.leafSNs.split(',') | length > 1 else ''),
+            'torSN1': (tor_pair.torSN.split(',')[0] if ',' in (tor_pair.torSN | default('')) else tor_pair.torSN | default('')),
+            'torSN2': (tor_pair.torSN.split(',')[1] if ',' in (tor_pair.torSN | default('')) and tor_pair.torSN.split(',') | length > 1 else '')
+          }
+        }
+      ] }}
+  loop: "{{ ndfc_tor_discovery.response.DATA.torPairs | default([]) | selectattr('remarks', 'search', 'Already paired') }}"
+  loop_control:
+    loop_var: tor_pair
+    label: "{{ tor_pair.torName }} - {{ tor_pair.remarks }}"
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - ndfc_tor_discovery is defined
+    - ndfc_tor_discovery.response is defined
+    - ndfc_tor_discovery.response.DATA is defined
+    - ndfc_tor_discovery.response.DATA.torPairs is defined
+
+- name: Cache NDFC discovered pairings for future reference (brownfield remove)
+  ansible.builtin.copy:
+    content: "{{ ndfc_discovered_pairings | to_nice_yaml }}"
+    dest: "{{ path_name }}ndfc_tor_pairing_discovered.yml"
+    mode: '0644'
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - ndfc_discovered_pairings is defined
+    - ndfc_discovered_pairings | length > 0
+
+- name: Use NDFC discovered pairings as previous state (brownfield remove)
+  ansible.builtin.set_fact:
+    tor_pairing_previous_list: "{{ ndfc_discovered_pairings }}"
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - ndfc_discovered_pairings is defined
+    - ndfc_discovered_pairings | length > 0
+
+- name: Debug ToR pairing brownfield discovery (remove)
+  ansible.builtin.debug:
+    msg:
+      - "==================== ToR Pairing Discovery ===================="
+      - "Source: {{ '.old artifact file' if tor_pairing_previous_exists else 'NDFC API query (brownfield)' }}"
+      - "Leaf switches available: {{ leaf_switches_for_query | default([]) | length }}"
+      - "NDFC discovered pairings: {{ ndfc_discovered_pairings | default([]) | length }}"
+      - "Previous list count: {{ tor_pairing_previous_list | length }}"
+      - "Discovered pairing IDs: {{ ndfc_discovered_pairings | default([]) | map(attribute='pairing_id') | list }}"
+      - "=============================================================="
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - ndfc_discovered_pairings is defined
+
+- name: Run ToR pairing diff analysis for brownfield removal
+  ansible.builtin.set_fact:
+    tor_pairing_diff_result: "{{ tor_pairing_current_list | cisco.nac_dc_vxlan.tor_pairing_diff(tor_pairing_previous_list) }}"
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - tor_pairing_previous_list | length > 0
+
+- name: Update removed ToR pairings after brownfield discovery
+  ansible.builtin.set_fact:
+    tor_pairing_removed: "{{ tor_pairing_diff_result.removed | default([]) }}"
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - tor_pairing_diff_result is defined
+
+- name: Debug ToR pairing removal results (brownfield)
+  ansible.builtin.debug:
+    msg:
+      - "==================== ToR Pairing Removal Analysis ===================="
+      - "Previous pairings count: {{ tor_pairing_diff_result.stats.previous_count | default(tor_pairing_previous_list | length) }}"
+      - "Current pairings count: {{ tor_pairing_diff_result.stats.current_count | default(tor_pairing_current_list | length) }}"
+      - "Pairings to remove: {{ tor_pairing_diff_result.stats.removed_count | default(tor_pairing_removed | length) }}"
+      - "Previous pairing IDs: {{ tor_pairing_diff_result.stats.previous_ids | default(tor_pairing_previous_list | map(attribute='pairing_id') | list) }}"
+      - "Current pairing IDs: {{ tor_pairing_diff_result.stats.current_ids | default(tor_pairing_current_list | map(attribute='pairing_id') | list) }}"
+      - "Removed pairing IDs: {{ tor_pairing_diff_result.stats.removed_ids | default(tor_pairing_removed | map(attribute='pairing_id') | list) }}"
+      - "====================================================================="
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - tor_pairing_diff_result is defined
+
+- name: Flag ToR pairing removal due to brownfield discovery
+  cisco.nac_dc_vxlan.common.change_flag_manager:
+    fabric_type: "{{ MD_Extended.vxlan.fabric.type }}"
+    fabric_name: "{{ MD_Extended.vxlan.fabric.name }}"
+    role_path: "{{ common_role_path }}"
+    operation: update
+    change_flag: changes_detected_tor_pairing
+    flag_value: true
+  delegate_to: localhost
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+    - tor_pairing_removed | length > 0
+
+- name: Propagate ToR pairing removal facts into vars_common namespace
+  ansible.builtin.set_fact:
+    vars_common_vxlan: "{{ (vars_common_vxlan | default({})) | combine(tor_pairing_common_updates, recursive=True) }}"
+    vars_common_ebgp_vxlan: "{{ (vars_common_ebgp_vxlan | default({})) | combine(tor_pairing_common_updates, recursive=True) }}"
+    vars_common_msd: "{{ (vars_common_msd | default({})) | combine(tor_pairing_common_updates, recursive=True) }}"
+    vars_common_isn: "{{ (vars_common_isn | default({})) | combine(tor_pairing_common_updates, recursive=True) }}"
+    vars_common_external: "{{ (vars_common_external | default({})) | combine(tor_pairing_common_updates, recursive=True) }}"
+  vars:
+    tor_pairing_common_updates:
+      tor_pairing_removed: "{{ tor_pairing_removed | default([]) }}"
+  when:
+    - tor_pairing_previous_exists is defined
+    - not tor_pairing_previous_exists
+    - tor_pairing_delete_mode is defined
+    - tor_pairing_delete_mode | bool
+
 - name: Set vars_common Based On Fabric Type - VXLAN_EVPN/iBGP_VXLAN
   ansible.builtin.set_fact:
     vars_common_local: "{{ vars_common_vxlan }}"
