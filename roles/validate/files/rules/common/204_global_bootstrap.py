@@ -1,3 +1,6 @@
+import ipaddress
+
+
 class Rule:
     id = "204"
     description = "Verify bootstrap configuration"
@@ -68,6 +71,24 @@ class Rule:
             elif 'domain_name' in check['keys_not_found'] and fabric_type == "external":
                 results.append(f"vxlan.global.bootstrap.{dhcp}.domain_name is required for bootstrap in an External type fabric.")
 
+            # Validate DHCP multi_subnet_scope (NDFC BOOTSTRAP_MULTISUBNET) format and gateway uniqueness.
+            if fabric_type in bootstrap_keys:
+                dhcp_block = cls.safeget(data_model, ['vxlan', 'global', fabric_type, 'bootstrap', dhcp])
+                multisubnet_path = f"vxlan.global.{fabric_type}.bootstrap.{dhcp}.multi_subnet_scope"
+            else:
+                dhcp_block = cls.safeget(data_model, ['vxlan', 'global', 'bootstrap', dhcp])
+                multisubnet_path = f"vxlan.global.bootstrap.{dhcp}.multi_subnet_scope"
+            if isinstance(dhcp_block, dict) and dhcp_block.get('multi_subnet_scope'):
+                version = 4 if dhcp == 'dhcp_v4' else 6
+                prefix_min, prefix_max = (8, 30) if version == 4 else (64, 126)
+                results.extend(
+                    cls.validate_multi_subnet_scope(
+                        dhcp_block.get('multi_subnet_scope'),
+                        dhcp_block.get('switch_mgmt_default_gw'),
+                        version, prefix_min, prefix_max, multisubnet_path,
+                    )
+                )
+
         dm_check = cls.data_model_key_check(data_model, ['vxlan', 'topology', 'switches'])
         if 'switches' in dm_check['keys_data']:
             switches = data_model['vxlan']['topology']['switches']
@@ -103,6 +124,79 @@ class Rule:
                 )
 
         return results
+
+    @classmethod
+    def validate_multi_subnet_scope(cls, multi_subnet_scope, primary_gw, version, prefix_min, prefix_max, path):
+        results = []
+        seen_gateways = []
+
+        for raw_line in str(multi_subnet_scope).splitlines():
+            line = raw_line.strip()
+            # Skip blank lines and NDFC comment lines (lines prefixed with #)
+            if not line or line.startswith('#'):
+                continue
+
+            parts = [part.strip() for part in line.split(',')]
+            if len(parts) != 4:
+                results.append(
+                    f"{path} scope '{line}' is not a valid NDFC BOOTSTRAP_MULTISUBNET entry. "
+                    f"Each line must have exactly 4 comma-separated values formatted as "
+                    f"'Start_IP, End_IP, Gateway, Prefix' (e.g. '10.6.0.2, 10.6.0.9, 10.6.0.1, 24'). "
+                    f"Enter one subnet scope per line; lines starting with '#' are treated as comments and ignored."
+                )
+                continue
+
+            start_ip, end_ip, gateway, prefix = parts
+
+            for label, address in (("Start_IP", start_ip), ("End_IP", end_ip), ("Gateway", gateway)):
+                if not cls.is_valid_ip(address, version):
+                    results.append(
+                        f"{path} scope '{line}' has an invalid IPv{version} {label} '{address}'."
+                    )
+
+            if not cls.is_valid_prefix(prefix, prefix_min, prefix_max):
+                results.append(
+                    f"{path} scope '{line}' has an invalid Prefix '{prefix}'. "
+                    f"Expected an integer between {prefix_min} and {prefix_max}."
+                )
+
+            if cls.is_valid_ip(gateway, version):
+                if primary_gw is not None and cls.same_ip(gateway, str(primary_gw)):
+                    results.append(
+                        f"{path} scope '{line}' gateway '{gateway}' must not be the same as the "
+                        f"primary switch_mgmt_default_gw '{primary_gw}'. NDFC rejects repeated gateways."
+                    )
+                if any(cls.same_ip(gateway, seen) for seen in seen_gateways):
+                    results.append(
+                        f"{path} gateway '{gateway}' is repeated across multi_subnet_scope entries. "
+                        f"Each subnet scope must use a unique gateway."
+                    )
+                seen_gateways.append(gateway)
+
+        return results
+
+    @classmethod
+    def is_valid_ip(cls, address, version):
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        return ip.version == version
+
+    @classmethod
+    def same_ip(cls, address_a, address_b):
+        try:
+            return ipaddress.ip_address(address_a) == ipaddress.ip_address(address_b)
+        except ValueError:
+            return address_a == address_b
+
+    @classmethod
+    def is_valid_prefix(cls, prefix, prefix_min, prefix_max):
+        try:
+            value = int(prefix)
+        except (ValueError, TypeError):
+            return False
+        return prefix_min <= value <= prefix_max
 
     @classmethod
     def data_model_key_check(cls, tested_object, keys):
