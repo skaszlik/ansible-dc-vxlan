@@ -46,6 +46,12 @@
 - name: Manage Fabric in Nexus Dashboard
   cisco.dcnm.dcnm_fabric:
     state: merged
+    # HOTFIX(sgt_passthrough): when DCNM owns SGT (ENABLE_SGT=loose), dcnm_fabric's
+    # client-side validator spuriously rejects ENABLE_PVLAN=false on the MSD. Skip
+    # client-side validation for passthrough fabrics (NDFC still validates server-side).
+    # Read the MERGED model (data_model_extended): the raw 'vxlan' hostvar is unreliable
+    # here because hash_behaviour=replace collapses the split *.nac.yaml files.
+    skip_validation: "{{ ( (data_model_extended.vxlan.multisite.sgt_passthrough | default(false)) if data_model_extended.vxlan.fabric.type == 'MSD' else (data_model_extended.vxlan.global.ibgp.sgt_passthrough | default(false)) ) | bool }}"
     config: "{{ vars_common_local.fabric_config }}"
 
 - name: Create ANYCAST_RP in Nexus Dashboard

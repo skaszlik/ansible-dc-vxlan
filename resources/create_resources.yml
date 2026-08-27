@@ -78,6 +78,10 @@ create_resources:
   VXLAN_EVPN:
     - resource_name: fabric
       module: dcnm_fabric
+      # SGT-passthrough: DCNM owns ENABLE_SGT(=loose). dcnm_fabric's client-side
+      # validator then spuriously rejects ENABLE_PVLAN=false on the fabric. Skip
+      # it here (NDFC still validates server-side) - matches eBGP/ISN/External steps.
+      skip_validation: true
       state: merged
       fabric_param: null
       deploy: null
@@ -608,6 +612,10 @@ create_resources:
   MSD:
     - resource_name: fabric
       module: dcnm_fabric
+      # SGT-passthrough: DCNM owns ENABLE_SGT(=loose). dcnm_fabric's client-side
+      # validator then spuriously rejects ENABLE_PVLAN=false on the fabric. Skip
+      # it here (NDFC still validates server-side) - matches eBGP/ISN/External steps.
+      skip_validation: true
       state: merged
       fabric_param: null
       deploy: null
